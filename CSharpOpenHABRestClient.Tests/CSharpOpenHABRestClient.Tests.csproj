@@ -6,11 +6,11 @@
     <Nullable>enable</Nullable>
     <LangVersion>11</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>OpenHABRestClient.Tests</AssemblyName>
+    <AssemblyName>CSharpOpenHABRestClient.Tests</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\OpenHABRestClient\OpenHABRestClient.csproj" />
+    <ProjectReference Include="..\CSharpOpenHABRestClient\OpenHABRestClient.csproj" />
   </ItemGroup>
 
 </Project>

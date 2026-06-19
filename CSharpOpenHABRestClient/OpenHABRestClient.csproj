@@ -8,8 +8,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
 
     <!-- NuGet-Paketmetadaten -->
-    <PackageId>OpenHABRestClient</PackageId>
-    <Version>1.0.1</Version>
+    <PackageId>CSharpOpenHABRestClient</PackageId>
+    <Version>1.0.0</Version>
     <Authors>Michael Christian Dörflinger</Authors>
     <Company>michdo93</Company>
     <Description>C# client for the openHAB REST API. Mirrors python-openhab-rest-client. Zero external dependencies.</Description>
