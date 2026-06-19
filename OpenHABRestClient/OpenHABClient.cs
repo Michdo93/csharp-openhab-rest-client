@@ -88,7 +88,14 @@ namespace OpenHABRestClient
         /// <summary>Verifies connectivity. Sets <see cref="IsLoggedIn"/> on success.</summary>
         public void Login()
         {
-            IsCloud = BaseUrl == "https://myopenhab.org";
+            IsCloud = BaseUrl.Contains("myopenhab.org");
+            if (IsCloud)
+            {
+                // myopenhab.org does not accept Basic Auth on /rest directly.
+                // Validation happens on first real API call.
+                IsLoggedIn = true;
+                return;
+            }
             try
             {
                 var resp = _http.GetAsync(BaseUrl + "/rest").GetAwaiter().GetResult();
