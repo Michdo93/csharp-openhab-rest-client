@@ -1,10 +1,14 @@
-# csharp-openhab-rest-client
+# cpp-openhab-rest-client
 
-A C# client for the openHAB REST API. This library enables easy interaction with the openHAB REST API to control smart home devices, retrieve status information, and process events — from any .NET application.
+A C++ client for the openHAB REST API. This library enables easy interaction with the openHAB REST API to control smart home devices, retrieve status information, and process events — from any C++ application.
 
 It mirrors the [python-openhab-rest-client](https://github.com/Michdo93/python-openhab-rest-client) library: same class names, same method names, same usage pattern.
 
-**Zero external dependencies** — built entirely on `System.Net.Http.HttpClient`, which is part of the .NET standard library. Every API method exists in both a synchronous and an asynchronous (`Async`) variant.
+**Dependencies:**
+- [libcurl](https://curl.se/libcurl/) — HTTP communication
+- [nlohmann/json](https://github.com/nlohmann/json) — JSON parsing (auto-downloaded by CMake if not found)
+
+All API methods return `nlohmann::json` objects, so you work with structured data directly — no manual JSON parsing needed.
 
 ## Features
 
@@ -39,189 +43,302 @@ Supports the following openHAB REST API endpoints:
 - UUID
 - Voice
 
-Server-Sent Events (SSE) are supported via `SSEConnection`, which exposes both `ReadAll()` (synchronous `IEnumerable<string>`) and `ReadAllAsync()` (asynchronous `IAsyncEnumerable<string>` for `await foreach`).
+Server-Sent Events (SSE) are supported via `SSEConnection` using a callback (`forEach`) or cancellable blocking loop.
 
 ## Requirements
 
-- **.NET Standard 2.1** or **.NET 8.0** (or later)
-- No external NuGet dependencies
-- C# 11 or later (for `await foreach` with SSE)
+- **C++17** or later
+- **CMake 3.16** or later
+- **libcurl** development headers
+- **nlohmann/json 3.2.0+** (auto-downloaded if not installed)
+- A C++ compiler: GCC 8+, Clang 7+, MSVC 2019+, or MinGW-w64
+
+---
+
+## Building the Library
+
+The library uses CMake and produces both a **shared library** (`libopenhab_rest_client.so` / `.dll`) and a **static library** (`libopenhab_rest_client.a` / `.lib`).
+
+---
+
+### Linux / macOS
+
+#### 1. Install dependencies
+
+**Ubuntu / Debian:**
+```bash
+sudo apt-get update
+sudo apt-get install -y libcurl4-openssl-dev cmake build-essential
+```
+
+**Fedora / RHEL / CentOS:**
+```bash
+sudo dnf install -y libcurl-devel cmake gcc-c++ make
+```
+
+**Arch Linux:**
+```bash
+sudo pacman -S curl cmake base-devel
+```
+
+**macOS (Homebrew):**
+```bash
+brew install curl cmake nlohmann-json
+```
+
+#### 2. Clone and build
+
+```bash
+git clone https://github.com/Michdo93/cpp-openhab-rest-client.git
+cd cpp-openhab-rest-client
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build . -- -j$(nproc)
+```
+
+This produces:
+- `build/libopenhab_rest_client.so` (shared) + `build/libopenhab_rest_client.so.1` (versioned symlink)
+- `build/libopenhab_rest_client.a` (static)
+- `build/openhab_test` (test executable)
+
+#### 3. Install system-wide (optional)
+
+```bash
+sudo cmake --install .
+# Installs to /usr/local/lib/ and /usr/local/include/openhab/
+```
+
+Or to a custom prefix:
+
+```bash
+cmake --install . --prefix /opt/openhab-client
+```
+
+---
+
+### Windows (MSVC + vcpkg)
+
+#### 1. Install vcpkg dependencies
+
+```powershell
+vcpkg install curl nlohmann-json --triplet x64-windows
+```
+
+#### 2. Build with CMake
+
+```powershell
+mkdir build
+cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release `
+    -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+cmake --build . --config Release
+```
+
+This produces:
+- `build/Release/openhab_rest_client.dll`
+- `build/Release/openhab_rest_client.lib`
+- `build/Release/openhab_test.exe`
+
+#### Visual Studio
+
+1. Open Visual Studio and choose **Open a local folder**.
+2. Select the `cpp-openhab-rest-client` directory.
+3. Visual Studio detects `CMakeLists.txt` automatically.
+4. Set the CMake toolchain file in **Project → CMake Settings** if using vcpkg.
+5. Build with **Build → Build All**.
+
+---
+
+### Windows (MinGW-w64 / MSYS2)
+
+```bash
+pacman -S mingw-w64-x86_64-curl mingw-w64-x86_64-cmake mingw-w64-x86_64-gcc mingw-w64-x86_64-nlohmann-json
+mkdir build && cd build
+cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+cmake --build .
+```
+
+---
+
+### Raspberry Pi / ARM / Embedded Linux
+
+Same as Linux — works on all Linux distributions with libcurl:
+
+```bash
+sudo apt-get install -y libcurl4-openssl-dev cmake build-essential
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build . -- -j4
+```
+
+Cross-compilation for ARM from x86 host:
+
+```bash
+sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libcurl4-openssl-dev
+mkdir build && cd build
+cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain-aarch64.cmake -DCMAKE_BUILD_TYPE=Release
+cmake --build .
+```
 
 ---
 
 ## Adding the Library to Your Project
 
-There are four ways to add `CSharpOpenHABRestClient` to your project.
+Once built (or installed), there are several ways to use it.
 
 ---
 
-### Option 1: NuGet Package Manager (recommended)
+### Option 1: CMake `find_package` (after system install)
 
-The library is published to NuGet as `CSharpOpenHABRestClient`.
+After `cmake --install`, use `find_package` in your own `CMakeLists.txt`:
 
-#### .NET CLI
+```cmake
+cmake_minimum_required(VERSION 3.16)
+project(MyApp)
+
+set(CMAKE_CXX_STANDARD 17)
+
+find_package(OpenHABRestClient REQUIRED)
+find_package(CURL REQUIRED)
+
+add_executable(myapp main.cpp)
+target_link_libraries(myapp PRIVATE openhab_rest_client ${CURL_LIBRARIES})
+```
+
+---
+
+### Option 2: CMake `FetchContent` (no pre-install needed)
+
+Automatically download and build as part of your project:
+
+```cmake
+cmake_minimum_required(VERSION 3.16)
+project(MyApp)
+
+set(CMAKE_CXX_STANDARD 17)
+
+include(FetchContent)
+FetchContent_Declare(
+    openhab_rest_client
+    GIT_REPOSITORY https://github.com/Michdo93/cpp-openhab-rest-client.git
+    GIT_TAG        main
+)
+FetchContent_MakeAvailable(openhab_rest_client)
+
+find_package(CURL REQUIRED)
+
+add_executable(myapp main.cpp)
+target_link_libraries(myapp PRIVATE
+    openhab_rest_client_static
+    ${CURL_LIBRARIES}
+    nlohmann_json::nlohmann_json)
+```
+
+---
+
+### Option 3: CMake `add_subdirectory` (local copy)
+
+Clone or copy the library into your project tree:
 
 ```bash
-dotnet add package CSharpOpenHABRestClient
+git clone https://github.com/Michdo93/cpp-openhab-rest-client.git libs/openhab
 ```
 
-#### Visual Studio — NuGet Package Manager UI
+Then in your `CMakeLists.txt`:
 
-1. Right-click your project in Solution Explorer → **Manage NuGet Packages**.
-2. Click the **Browse** tab.
-3. Search for `CSharpOpenHABRestClient`.
-4. Select the package and click **Install**.
+```cmake
+cmake_minimum_required(VERSION 3.16)
+project(MyApp)
 
-#### Visual Studio — Package Manager Console
+set(CMAKE_CXX_STANDARD 17)
 
-```powershell
-Install-Package CSharpOpenHABRestClient
-```
+add_subdirectory(libs/openhab)
+find_package(CURL REQUIRED)
 
-#### `.csproj` — PackageReference (direct edit)
-
-```xml
-<ItemGroup>
-  <PackageReference Include="CSharpOpenHABRestClient" Version="1.0.0" />
-</ItemGroup>
-```
-
-#### `packages.config` (legacy .NET Framework projects)
-
-```xml
-<packages>
-  <package id="CSharpOpenHABRestClient" version="1.0.0" targetFramework="net48" />
-</packages>
+add_executable(myapp main.cpp)
+target_link_libraries(myapp PRIVATE
+    openhab_rest_client_static
+    ${CURL_LIBRARIES}
+    nlohmann_json::nlohmann_json)
 ```
 
 ---
 
-### Option 2: NuGet in ASP.NET Core
+### Option 4: Manual compilation (no CMake)
 
-For **ASP.NET Core** projects (Web APIs, Blazor, MVC) the installation is identical to the .NET CLI approach above. After installation you can register the client as a singleton or scoped service:
+Compile the library sources directly alongside your application:
 
-```csharp
-// Program.cs (Minimal API / .NET 6+)
-builder.Services.AddSingleton<OpenHABClient>(sp =>
-    new OpenHABClient("http://127.0.0.1:8080", "openhab", "habopen"));
-
-builder.Services.AddScoped<Items>();
-builder.Services.AddScoped<Things>();
-builder.Services.AddScoped<Rules>();
-```
-
-Then inject it in controllers or minimal API handlers:
-
-```csharp
-app.MapGet("/items", async (Items itemsAPI) =>
-{
-    var result = await itemsAPI.GetItemsAsync();
-    return Results.Ok(result);
-});
-```
-
-Or in a controller:
-
-```csharp
-[ApiController]
-[Route("[controller]")]
-public class OpenHABController : ControllerBase
-{
-    private readonly Items _items;
-    public OpenHABController(Items items) => _items = items;
-
-    [HttpGet("items")]
-    public async Task<IActionResult> GetItems()
-    {
-        var result = await _items.GetItemsAsync();
-        return Ok(result);
-    }
-}
-```
-
-For **Blazor Server** or **Blazor WebAssembly**, use `AddScoped` or `AddSingleton` depending on the hosting model, and inject via `@inject` or constructor injection.
-
----
-
-### Option 3: Download the DLL / NuGet package manually
-
-Download the `.nupkg` or pre-built `.dll` from the [GitHub Releases page](https://github.com/Michdo93/csharp-openhab-rest-client/releases).
-
-#### Install `.nupkg` locally
-
-Add a local NuGet source in `nuget.config` at your solution root:
-
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<configuration>
-  <packageSources>
-    <add key="local" value="./local-packages" />
-    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
-  </packageSources>
-</configuration>
-```
-
-Place the `.nupkg` in `./local-packages/`, then:
-
+**Linux / macOS:**
 ```bash
-dotnet add package CSharpOpenHABRestClient --source ./local-packages
+g++ -std=c++17 -O2 \
+    -I/path/to/cpp-openhab-rest-client/include \
+    -I/path/to/nlohmann \
+    cpp-openhab-rest-client/src/OpenHABClient.cpp \
+    cpp-openhab-rest-client/src/Items.cpp \
+    cpp-openhab-rest-client/src/Things.cpp \
+    cpp-openhab-rest-client/src/Rules.cpp \
+    cpp-openhab-rest-client/src/Events.cpp \
+    cpp-openhab-rest-client/src/Actions.cpp \
+    main.cpp \
+    -lcurl -o myapp
 ```
 
-#### Add DLL directly (`.csproj`)
-
-Place the DLL in e.g. `libs/` and reference it:
-
-```xml
-<ItemGroup>
-  <Reference Include="OpenHABRestClient">
-    <HintPath>libs\OpenHABRestClient.dll</HintPath>
-  </Reference>
-</ItemGroup>
-```
-
-#### Visual Studio — Add Reference
-
-1. Right-click your project → **Add** → **Project Reference** → **Browse**.
-2. Select `OpenHABRestClient.dll`.
-3. Click **OK**.
-
----
-
-### Option 4: Add the source project directly
-
-Clone the repository and reference the `.csproj` in your solution.
-
-```bash
-git clone https://github.com/Michdo93/csharp-openhab-rest-client.git
-```
-
-Add a project reference in your `.csproj`:
-
-```xml
-<ItemGroup>
-  <ProjectReference Include="..\csharp-openhab-rest-client\OpenHABRestClient\OpenHABRestClient.csproj" />
-</ItemGroup>
-```
-
-Or add it via Visual Studio Solution Explorer:
-1. Right-click your project → **Add** → **Project Reference**.
-2. Browse to `OpenHABRestClient.csproj` and add it.
-
-Or add both projects to one solution:
-
-```bash
-dotnet sln MyApp.sln add csharp-openhab-rest-client/OpenHABRestClient/OpenHABRestClient.csproj
-dotnet sln MyApp.sln add MyApp/MyApp.csproj
+**Windows (MSVC Developer Command Prompt):**
+```cmd
+cl /std:c++17 /O2 /EHsc ^
+    /I"path\to\include" /I"path\to\nlohmann" ^
+    src\OpenHABClient.cpp src\Items.cpp src\Things.cpp ^
+    src\Rules.cpp src\Events.cpp src\Actions.cpp ^
+    main.cpp ^
+    /link curl.lib /out:myapp.exe
 ```
 
 ---
 
-## Namespace & Using
+### Option 5: Link against pre-built libraries
 
-All classes are in the `OpenHABRestClient` namespace:
+If you downloaded or built the shared/static library:
 
-```csharp
-using OpenHABRestClient;
+**Linux (shared):**
+```bash
+g++ -std=c++17 main.cpp \
+    -I/usr/local/include \
+    -L/usr/local/lib \
+    -lopenhab_rest_client -lcurl \
+    -Wl,-rpath,/usr/local/lib \
+    -o myapp
+```
+
+**Linux (static):**
+```bash
+g++ -std=c++17 main.cpp \
+    -I/usr/local/include \
+    /usr/local/lib/libopenhab_rest_client.a \
+    -lcurl -o myapp
+```
+
+**Windows (shared DLL):**
+```cmd
+cl /std:c++17 main.cpp /I"include" ^
+    /link openhab_rest_client.lib curl.lib /out:myapp.exe
+```
+Copy `openhab_rest_client.dll` next to the executable.
+
+---
+
+## Include
+
+All classes are in the `openhab` namespace. Use the single convenience header:
+
+```cpp
+#include <openhab/openhab.h>
+```
+
+Or include individual headers:
+
+```cpp
+#include <openhab/OpenHABClient.h>   // client + SSEConnection + OpenHABException
+#include <openhab/API.h>             // all API classes
 ```
 
 ---
@@ -230,545 +347,510 @@ using OpenHABRestClient;
 
 ### Authentication
 
-#### Basic Authentication
+```cpp
+#include <openhab/openhab.h>
+using namespace openhab;
 
-```csharp
-var client = new OpenHABClient("http://127.0.0.1:8080", "openhab", "habopen");
+// Basic Authentication
+OpenHABClient client("http://127.0.0.1:8080", "openhab", "habopen");
+
+// Token Authentication
+OpenHABClient client("http://127.0.0.1:8080", "", "", "oh.openhab.xxxx");
+
+// myopenhab.org Cloud
+OpenHABClient client("https://myopenhab.org", "your@email.com", "yourpassword");
 ```
 
-#### Token-based Authentication
+The constructor calls `login()` automatically. Check connectivity:
 
-```csharp
-var client = new OpenHABClient(
-    "http://127.0.0.1:8080",
-    token: "oh.openhab.U0doM1Lz4kJ6tPlVGjH17jjm4ZcTHIHi7sMwESzrIybKbCGySmBMtysPnObQLuLf7PgqnI7jWQ5LosySY8Q"
-);
-```
-
-#### myopenhab.org Cloud
-
-```csharp
-var client = new OpenHABClient("https://myopenhab.org", "your@email.com", "yourpassword");
-```
-
-The constructor automatically calls `Login()` and sets `IsLoggedIn`:
-
-```csharp
-if (!client.IsLoggedIn)
-{
-    Console.Error.WriteLine("Connection failed.");
-    return;
+```cpp
+if (!client.isLoggedIn()) {
+    std::cerr << "Connection failed." << std::endl;
+    return 1;
 }
 ```
 
-### Synchronous Requests
+### REST Requests
 
-All API methods have a synchronous variant that blocks until the response arrives:
+All API methods return `nlohmann::json`. Throw `OpenHABException` on HTTP errors:
 
-```csharp
-using OpenHABRestClient;
+```cpp
+#include <openhab/openhab.h>
+#include <iostream>
+using namespace openhab;
 
-var client  = new OpenHABClient("http://127.0.0.1:8080", "openhab", "habopen");
-var items   = new Items(client);
+int main() {
+    try {
+        OpenHABClient client("http://127.0.0.1:8080", "openhab", "habopen");
+        Items items(client);
 
-string result = items.GetItems();
-Console.WriteLine(result); // raw JSON string
+        json allItems = items.getItems();
+        std::cout << allItems.dump(2) << std::endl;
 
-items.SendCommand("MyLightSwitch", "ON");
+        items.sendCommand("MyLightSwitch", "ON");
+    }
+    catch (const OpenHABException& e) {
+        std::cerr << "HTTP " << e.statusCode() << ": " << e.what() << std::endl;
+    }
+    return 0;
+}
 ```
 
-### Asynchronous Requests (async/await)
+### Working with JSON responses
 
-Every method has an `Async` counterpart returning `Task<string>`:
+All methods return `nlohmann::json`. Access fields directly:
 
-```csharp
-using OpenHABRestClient;
+```cpp
+json item = items.getItem("MyLightSwitch");
+std::string state = item["state"].get<std::string>();
+std::string name  = item["name"].get<std::string>();
+std::cout << name << " = " << state << std::endl;
 
-var client  = new OpenHABClient("http://127.0.0.1:8080", "openhab", "habopen");
-var items   = new Items(client);
-
-string result = await items.GetItemsAsync();
-Console.WriteLine(result);
-
-await items.SendCommandAsync("MyLightSwitch", "ON");
-```
-
-### AsyncOpenHABClient
-
-Use `AsyncOpenHABClient` when you want explicit async naming or need `await LoginAsync()`:
-
-```csharp
-var client = new AsyncOpenHABClient("http://127.0.0.1:8080", "openhab", "habopen");
-await client.LoginAsync();
-
-var items = new Items(client); // all API classes accept both client types
-string result = await items.GetItemsAsync();
+// Iterate over a list
+json allItems = items.getItems();
+for (const auto& it : allItems) {
+    std::cout << it["name"].get<std::string>() << std::endl;
+}
 ```
 
 ### Server-Sent Events (SSE)
 
-SSE streams return an `SSEConnection` object that supports both synchronous and asynchronous consumption. Always dispose it with `using` or `await using`.
+`SSEConnection` is non-copyable and uses a blocking `forEach` callback. Return `true` to continue receiving events, `false` to stop.
 
-#### Synchronous (`foreach`)
+```cpp
+#include <openhab/openhab.h>
+#include <iostream>
+using namespace openhab;
 
-```csharp
-var itemEvents = new ItemEvents(client);
+int main() {
+    OpenHABClient client("http://127.0.0.1:8080", "openhab", "habopen");
+    ItemEvents itemEvents(client);
 
-using var sse = itemEvents.ItemStateChangedEvent("MyLightSwitch");
-foreach (var data in sse.ReadAll())
-{
-    // data = raw JSON payload after "data: "
-    Console.WriteLine(data);
+    auto sse = itemEvents.ItemStateChangedEvent("MyLightSwitch");
+    sse.forEach([](const std::string& data) -> bool {
+        // data = raw JSON payload after "data: "
+        json event = json::parse(data);
+        std::cout << "Event: " << event.dump() << std::endl;
+        return true;  // return false to stop
+    });
+
+    return 0;
 }
 ```
 
-#### Asynchronous (`await foreach`, C# 8+)
+#### Stop from another thread
 
-```csharp
-var itemEvents = new ItemEvents(client);
+```cpp
+auto sse = itemEvents.ItemStateChangedEvent();
 
-await using var sse = itemEvents.ItemStateChangedEvent("MyLightSwitch");
-await foreach (var data in sse.ReadAllAsync())
-{
-    Console.WriteLine(data);
-}
+// Start SSE in a background thread
+std::thread sseThread([&sse]() {
+    sse.forEach([](const std::string& data) -> bool {
+        std::cout << data << std::endl;
+        return true;
+    });
+});
+
+// Stop after 10 seconds from main thread
+std::this_thread::sleep_for(std::chrono::seconds(10));
+sse.cancel();
+sseThread.join();
 ```
 
-#### With CancellationToken (stop after timeout)
+### Running the test application
 
-```csharp
-using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+Edit the connection settings at the top of `test/test.cpp`, then:
 
-await using var sse = itemEvents.ItemStateChangedEvent();
-await foreach (var data in sse.ReadAllAsync(cts.Token))
-{
-    Console.WriteLine(data);
-}
-```
-
-### Parsing Responses
-
-All REST methods return raw JSON `string`. Parse with `System.Text.Json` or any other JSON library:
-
-```csharp
-using System.Text.Json;
-
-string json   = items.GetItem("MyLightSwitch");
-var    doc    = JsonDocument.Parse(json);
-string state  = doc.RootElement.GetProperty("state").GetString() ?? "";
-Console.WriteLine(state);
-```
-
-### Error Handling
-
-All REST methods throw `OpenHABException` on HTTP errors or connection failures:
-
-```csharp
-try
-{
-    items.SendCommand("NonExistent", "ON");
-}
-catch (OpenHABException ex)
-{
-    Console.Error.WriteLine($"HTTP {ex.StatusCode}: {ex.Message}");
-}
-```
-
-### `IDisposable`
-
-`OpenHABClient` implements `IDisposable`. Use `using` in long-running applications:
-
-```csharp
-using var client = new OpenHABClient("http://127.0.0.1:8080", "openhab", "habopen");
-var items = new Items(client);
-// ...
+```bash
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build .
+./openhab_test
 ```
 
 ---
 
 ## Full List of Methods
 
-Every synchronous method has an identical `Async` counterpart that returns `Task<string>` instead of `string`. They are listed together in this documentation. All methods throw `OpenHABException` on error.
+All methods return `nlohmann::json` unless noted. All methods throw `openhab::OpenHABException` on HTTP errors or connection failures. Optional `std::string` parameters default to `""` (empty = not sent to the server).
 
 ---
 
-### OpenHABClient
+### `openhab::OpenHABClient`
 
-The core HTTP client. All API classes take an `OpenHABClient` in their constructor.
+The core HTTP client. All API classes hold a reference to an `OpenHABClient`.
 
-#### Namespace
+#### Header
 
-```csharp
-using OpenHABRestClient;
+```cpp
+#include <openhab/OpenHABClient.h>
 ```
 
 #### Constructor
 
-```csharp
-OpenHABClient(string url, string? username = null, string? password = null, string? token = null)
+```cpp
+OpenHABClient(const std::string& url,
+              const std::string& username = "",
+              const std::string& password = "",
+              const std::string& token    = "")
 ```
 
 **Parameters:**
-- `url` — Base URL of the openHAB server (e.g. `"http://127.0.0.1:8080"`). Trailing slash is stripped automatically.
-- `username` — Username for Basic Authentication, or `null`.
-- `password` — Password for Basic Authentication, or `null`.
-- `token` — Bearer token for Token Authentication, or `null`.
+- `url` — Base URL (e.g. `"http://127.0.0.1:8080"`). Trailing slash is stripped.
+- `username` — Username for Basic Authentication, or `""`.
+- `password` — Password for Basic Authentication, or `""`.
+- `token` — Bearer token for Token Authentication, or `""`.
 
-The constructor calls `Login()` automatically.
+The constructor calls `login()` automatically. Non-copyable, movable.
 
 **Examples:**
 
-```csharp
+```cpp
 // Basic Auth
-var client = new OpenHABClient("http://127.0.0.1:8080", "openhab", "habopen");
+openhab::OpenHABClient client("http://127.0.0.1:8080", "openhab", "habopen");
 
-// Token Auth (named parameter)
-var client = new OpenHABClient("http://127.0.0.1:8080", token: "oh.openhab.xxxx");
+// Token Auth
+openhab::OpenHABClient client("http://127.0.0.1:8080", "", "", "oh.openhab.xxxx");
 
 // Cloud
-var client = new OpenHABClient("https://myopenhab.org", "user@example.com", "pass");
+openhab::OpenHABClient client("https://myopenhab.org", "user@example.com", "pass");
 ```
 
-#### Properties
+#### Getters
 
-| Property | Type | Description |
+| Method | Return type | Description |
 |---|---|---|
-| `BaseUrl` | `string` | Base URL without trailing slash |
-| `Username` | `string?` | Username (Basic Auth) |
-| `IsCloud` | `bool` | `true` when connected to `myopenhab.org` |
-| `IsLoggedIn` | `bool` | `true` after a successful `Login()` |
+| `baseUrl()` | `const std::string&` | Base URL without trailing slash |
+| `username()` | `const std::string&` | Username (Basic Auth) |
+| `isCloud()` | `bool` | `true` when connected to `myopenhab.org` |
+| `isLoggedIn()` | `bool` | `true` after a successful `login()` |
 
-#### Methods
+#### HTTP Methods
 
-##### `Login()`
+```cpp
+HttpResponse get (const std::string& endpoint,
+                  const Headers& headers = {},
+                  const Params&  params  = {}) const;
 
-Verifies connectivity. Called automatically by the constructor. Sets `IsLoggedIn` and `IsCloud`.
+HttpResponse post(const std::string& endpoint,
+                  const Headers& headers = {},
+                  const std::string& body = "",
+                  const Params& params = {}) const;
 
-```csharp
-client.Login();
-Console.WriteLine(client.IsLoggedIn); // true
+HttpResponse put (const std::string& endpoint,
+                  const Headers& headers = {},
+                  const std::string& body = "",
+                  const Params& params = {}) const;
+
+HttpResponse del (const std::string& endpoint,
+                  const Headers& headers = {},
+                  const std::string& body = "",
+                  const Params& params = {}) const;
 ```
 
-##### `Get(string path, Dictionary<string,string>? headers = null, Dictionary<string,string?>? query = null)`
+Note: `del` is used instead of `delete` because `delete` is a C++ keyword.
 
-Sends a GET request. Returns raw JSON or plain-text `string`.
-
-##### `Post(string path, Dictionary<string,string>? headers = null, string? body = null, Dictionary<string,string?>? query = null)`
-
-Sends a POST request.
-
-##### `Put(string path, Dictionary<string,string>? headers = null, string? body = null, Dictionary<string,string?>? query = null)`
-
-Sends a PUT request.
-
-##### `Delete(string path, Dictionary<string,string>? headers = null, string? body = null, Dictionary<string,string?>? query = null)`
-
-Sends a DELETE request.
-
-All four methods have async counterparts: `GetAsync`, `PostAsync`, `PutAsync`, `DeleteAsync`.
-
-##### `ExecuteSSE(string url)`
-
-Opens an SSE stream. Returns `SSEConnection`.
-
-##### Static helper methods
-
-```csharp
-// Build a header dictionary from key-value pairs
-// OpenHABClient.H("Content-Type", "application/json", "Accept", "*/*")
-public static Dictionary<string, string> H(params string[] kv)
-
-// Build a query-parameter dictionary, skipping null values
-// OpenHABClient.Q("type", "Switch", "tags", null)
-public static Dictionary<string, string?> Q(params string?[] kv)
+**Type aliases:**
+```cpp
+using Headers = std::map<std::string, std::string>;
+using Params  = std::map<std::string, std::string>;
 ```
 
-##### `Dispose()`
+#### SSE
 
-Disposes the internal `HttpClient`. Call via `using` statement.
+```cpp
+SSEConnection sse(const std::string& url) const;
+```
+
+Opens an SSE stream to the given full URL. Returns an `SSEConnection`.
 
 ---
 
-### AsyncOpenHABClient
+### `openhab::OpenHABException`
 
-Subclass of `OpenHABClient` with an explicit async name and `LoginAsync()` method.
+Thrown by all REST methods on HTTP errors or connection failures.
 
-```csharp
-var client = new AsyncOpenHABClient("http://127.0.0.1:8080", "openhab", "habopen");
-await client.LoginAsync();
+```cpp
+#include <openhab/OpenHABClient.h>
 ```
 
-All API classes accept both `OpenHABClient` and `AsyncOpenHABClient`.
+Inherits from `std::runtime_error`.
 
----
-
-### OpenHABException
-
-Thrown when a REST request fails.
-
-```csharp
-using OpenHABRestClient;
-```
-
-#### Properties
-
-| Property | Type | Description |
+| Method | Return type | Description |
 |---|---|---|
-| `StatusCode` | `int` | HTTP status code, or `-1` if not applicable |
-| `Message` | `string` | Error description |
+| `what()` | `const char*` | Error message |
+| `statusCode()` | `int` | HTTP status code, or `-1` if not applicable |
 
-```csharp
-try
-{
-    items.GetItem("nonExistent");
+```cpp
+try {
+    items.getItem("nonExistent");
 }
-catch (OpenHABException ex) when (ex.StatusCode == 404)
-{
-    Console.WriteLine("Item not found.");
+catch (const openhab::OpenHABException& e) {
+    std::cerr << "HTTP " << e.statusCode() << ": " << e.what() << std::endl;
 }
 ```
 
 ---
 
-### SSEConnection
+### `openhab::HttpResponse`
 
-Wraps an active SSE HTTP stream. Implements `IDisposable` and `IAsyncDisposable`.
+Returned by the low-level HTTP methods (`get`, `post`, `put`, `del`). The high-level API classes return `json` directly.
 
-#### Methods
-
-##### `ReadAll(CancellationToken ct = default)`
-
-Reads SSE events synchronously. Each `string` is the raw payload after `"data: "`.
-
-**Returns:** `IEnumerable<string>`
-
-```csharp
-using var sse = itemEvents.ItemStateChangedEvent("testSwitch");
-foreach (var data in sse.ReadAll())
-    Console.WriteLine(data);
-```
-
-##### `ReadAllAsync(CancellationToken ct = default)`
-
-Reads SSE events asynchronously with `await foreach`.
-
-**Returns:** `IAsyncEnumerable<string>`
-
-```csharp
-await using var sse = itemEvents.ItemStateChangedEvent("testSwitch");
-await foreach (var data in sse.ReadAllAsync())
-    Console.WriteLine(data);
-```
-
-##### `Cancel()`
-
-Stops the SSE stream immediately. Also called by `Dispose()` / `DisposeAsync()`.
+| Field/Method | Type | Description |
+|---|---|---|
+| `statusCode` | `int` | HTTP status code |
+| `body` | `std::string` | Response body |
+| `contentType` | `std::string` | Content-Type header value |
+| `location` | `std::string` | Location header (for redirects) |
+| `isJson()` | `bool` | `true` if Content-Type contains `application/json` |
+| `isEmpty()` | `bool` | `true` if body is blank |
+| `toJson()` | `json` | Parse body as JSON, or return `{"status": N}` if empty |
 
 ---
 
-### Actions
+### `openhab::SSEConnection`
+
+Wraps an active SSE HTTP stream. Non-copyable, movable.
+
+```cpp
+#include <openhab/OpenHABClient.h>
+```
+
+#### Methods
+
+##### `forEach(std::function<bool(const std::string&)> callback)`
+
+Blocks and calls `callback` for each event. The argument is the raw payload after `"data: "`. Return `true` to continue, `false` to stop.
+
+```cpp
+auto sse = itemEvents.ItemStateChangedEvent("testSwitch");
+sse.forEach([](const std::string& data) -> bool {
+    auto event = nlohmann::json::parse(data);
+    std::cout << event["type"].get<std::string>() << std::endl;
+    return true; // keep receiving
+});
+```
+
+##### `cancel()`
+
+Stops the stream. Safe to call from another thread.
+
+```cpp
+sse.cancel();
+```
+
+---
+
+### `openhab::Actions`
 
 Provides methods to retrieve and execute thing actions.
 
 #### Constructor
 
-```csharp
-var actions = new Actions(client);
+```cpp
+openhab::Actions actions(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetActions(string thingUID, string? language = null)` | `GetActionsAsync` | Gets all available actions for a thing |
-| `ExecuteAction(string thingUID, string actionUID, string inputsJson, string? language = null)` | `ExecuteActionAsync` | Executes an action on a thing |
+##### `getActions(const std::string& thingUID, const std::string& lang = "")`
 
-**Parameters for `ExecuteAction`:**
+Gets all available actions for a thing.
+
+**Parameters:**
+- `thingUID` — The UID of the thing.
+- `lang` — Optional `Accept-Language` header value.
+
+**Returns:** `json`
+
+##### `executeAction(const std::string& thingUID, const std::string& actionUID, const json& inputs, const std::string& lang = "")`
+
+Executes an action on a thing.
+
+**Parameters:**
 - `thingUID` — The UID of the thing.
 - `actionUID` — The UID of the action.
-- `inputsJson` — JSON string with input parameters.
-- `language` — Optional `Accept-Language` header.
+- `inputs` — JSON object with input parameters.
+- `lang` — Optional language header.
 
-```csharp
-actions.ExecuteAction("myThingUID", "myActionUID", "{\"param1\":\"value1\"}");
+**Returns:** `json`
+
+```cpp
+actions.executeAction("myThingUID", "myActionUID",
+    {{"param1", "value1"}, {"param2", 42}});
 ```
 
 ---
 
-### Addons
+### `openhab::Addons`
 
 Provides methods to manage openHAB add-ons.
 
 #### Constructor
 
-```csharp
-var addons = new Addons(client);
+```cpp
+openhab::Addons addons(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetAddons(string? serviceID = null, string? language = null)` | `GetAddonsAsync` | Gets all available add-ons |
-| `GetAddon(string id, string? serviceID = null, string? language = null)` | `GetAddonAsync` | Gets a specific add-on |
-| `GetAddonConfig(string id, string? serviceID = null)` | `GetAddonConfigAsync` | Gets the add-on configuration |
-| `UpdateAddonConfig(string id, string json, string? serviceID = null)` | `UpdateAddonConfigAsync` | Updates the add-on configuration |
-| `InstallAddon(string id, string? serviceID = null)` | `InstallAddonAsync` | Installs an add-on |
-| `UninstallAddon(string id, string? serviceID = null)` | `UninstallAddonAsync` | Uninstalls an add-on |
-| `GetAddonServices(string? language = null)` | `GetAddonServicesAsync` | Gets all add-on services |
-| `GetAddonSuggestions(string? language = null)` | `GetAddonSuggestionsAsync` | Gets suggested add-ons |
-| `GetAddonTypes(string? serviceID = null, string? language = null)` | `GetAddonTypesAsync` | Gets all add-on types |
-| `InstallAddonFromUrl(string url)` | `InstallAddonFromUrlAsync` | Installs an add-on from a URL |
+| Method | Description |
+|---|---|
+| `getAddons(const std::string& serviceID = "", const std::string& lang = "")` | Gets all available add-ons |
+| `getAddon(const std::string& id, const std::string& serviceID = "", const std::string& lang = "")` | Gets a specific add-on |
+| `getAddonConfig(const std::string& id, const std::string& serviceID = "")` | Gets the add-on configuration |
+| `updateAddonConfig(const std::string& id, const json& config, const std::string& serviceID = "")` | Updates the add-on configuration |
+| `installAddon(const std::string& id, const std::string& serviceID = "")` | Installs an add-on |
+| `uninstallAddon(const std::string& id, const std::string& serviceID = "")` | Uninstalls an add-on |
+| `getAddonServices(const std::string& lang = "")` | Gets all add-on services |
+| `getAddonSuggestions(const std::string& lang = "")` | Gets suggested add-ons |
+| `getAddonTypes(const std::string& serviceID = "", const std::string& lang = "")` | Gets all add-on types |
+| `installAddonFromUrl(const std::string& url)` | Installs an add-on from a URL |
 
 ---
 
-### Audio
+### `openhab::Audio`
 
 Provides methods to interact with the openHAB audio system.
 
 #### Constructor
 
-```csharp
-var audio = new Audio(client);
+```cpp
+openhab::Audio audio(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetDefaultSink(string? language = null)` | `GetDefaultSinkAsync` | Gets the default audio sink |
-| `GetDefaultSource(string? language = null)` | `GetDefaultSourceAsync` | Gets the default audio source |
-| `GetSinks(string? language = null)` | `GetSinksAsync` | Gets all available sinks |
-| `GetSources(string? language = null)` | `GetSourcesAsync` | Gets all available sources |
+| Method | Description |
+|---|---|
+| `getDefaultSink(const std::string& lang = "")` | Gets the default audio sink |
+| `getDefaultSource(const std::string& lang = "")` | Gets the default audio source |
+| `getSinks(const std::string& lang = "")` | Gets all available sinks |
+| `getSources(const std::string& lang = "")` | Gets all available sources |
 
 ---
 
-### Auth
+### `openhab::Auth`
 
 Provides methods for authentication token and session management.
 
 #### Constructor
 
-```csharp
-var auth = new Auth(client);
+```cpp
+openhab::Auth auth(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetAPITokens()` | `GetAPITokensAsync` | Gets all API tokens for the current user |
-| `RevokeAPIToken(string name)` | `RevokeAPITokenAsync` | Revokes an API token by name |
-| `Logout(string refreshToken, string sessionID)` | `LogoutAsync` | Terminates a session |
-| `GetSessions()` | `GetSessionsAsync` | Gets all active sessions |
-| `GetToken(string? grantType, string? code, string? redirectUri, string? clientId, string? refreshToken, string? codeVerifier)` | `GetTokenAsync` | Obtains OAuth access and refresh tokens |
-
-All parameters of `GetToken` are optional (default `null`).
-
-```csharp
-var token = auth.GetToken(grantType: "password", clientId: "my-app");
-```
+| Method | Description |
+|---|---|
+| `getAPITokens()` | Gets all API tokens for the current user |
+| `revokeAPIToken(const std::string& name)` | Revokes an API token by name |
+| `logout(const std::string& refreshToken, const std::string& sessionId)` | Terminates a session |
+| `getSessions()` | Gets all active sessions |
+| `getToken(const std::string& grantType = "", const std::string& code = "", const std::string& redirectUri = "", const std::string& clientId = "", const std::string& refreshToken = "", const std::string& codeVerifier = "")` | Obtains OAuth access and refresh tokens |
 
 ---
 
-### ChannelTypes
+### `openhab::ChannelTypes`
 
 Provides methods to retrieve channel type information.
 
 #### Constructor
 
-```csharp
-var channelTypes = new ChannelTypes(client);
+```cpp
+openhab::ChannelTypes channelTypes(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetChannelTypes(string? prefixes = null, string? language = null)` | `GetChannelTypesAsync` | Gets all channel types |
-| `GetChannelType(string uid, string? language = null)` | `GetChannelTypeAsync` | Gets a specific channel type |
-| `GetLinkableItemTypes(string uid)` | `GetLinkableItemTypesAsync` | Gets item types linkable to a trigger channel type |
+| Method | Description |
+|---|---|
+| `getChannelTypes(const std::string& prefixes = "", const std::string& lang = "")` | Gets all channel types |
+| `getChannelType(const std::string& uid, const std::string& lang = "")` | Gets a specific channel type |
+| `getLinkableItemTypes(const std::string& uid)` | Gets item types linkable to a trigger channel type |
 
 ---
 
-### ConfigDescriptions
+### `openhab::ConfigDescriptions`
 
 Provides methods to retrieve configuration descriptions.
 
 #### Constructor
 
-```csharp
-var configDescriptions = new ConfigDescriptions(client);
+```cpp
+openhab::ConfigDescriptions configDescriptions(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetConfigDescriptions(string? scheme = null, string? language = null)` | `GetConfigDescriptionsAsync` | Gets all configuration descriptions |
-| `GetConfigDescription(string uri, string? language = null)` | `GetConfigDescriptionAsync` | Gets a specific configuration description by URI |
+| Method | Description |
+|---|---|
+| `getConfigDescriptions(const std::string& scheme = "", const std::string& lang = "")` | Gets all configuration descriptions |
+| `getConfigDescription(const std::string& uri, const std::string& lang = "")` | Gets a specific configuration description |
 
 ---
 
-### Discovery
+### `openhab::Discovery`
 
 Provides methods to interact with the openHAB discovery service.
 
 #### Constructor
 
-```csharp
-var discovery = new Discovery(client);
+```cpp
+openhab::Discovery discovery(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetDiscoveryBindings()` | `GetDiscoveryBindingsAsync` | Gets all bindings that support discovery |
-| `GetBindingInfo(string id, string? language = null)` | `GetBindingInfoAsync` | Gets information about a binding |
-| `StartBindingScan(string id, string? input = null)` | `StartBindingScanAsync` | Starts a discovery scan for a binding |
+| Method | Description |
+|---|---|
+| `getDiscoveryBindings()` | Gets all bindings that support discovery |
+| `getBindingInfo(const std::string& bindingId, const std::string& lang = "")` | Gets information about a binding |
+| `startBindingScan(const std::string& bindingId, const std::string& input = "")` | Starts a discovery scan |
 
-```csharp
-discovery.StartBindingScan("zwave");
+```cpp
+discovery.startBindingScan("zwave");
 ```
 
 ---
 
-### Events
+### `openhab::Events`
 
 Provides general openHAB event bus access via SSE.
 
 #### Constructor
 
-```csharp
-var events = new Events(client);
+```cpp
+openhab::Events events(client);
 ```
 
 #### Methods
 
 | Method | Returns | Description |
 |---|---|---|
-| `GetEvents(string? topics = null)` | `SSEConnection` | All events, optionally filtered by topic |
-| `InitiateStateTracker()` | `SSEConnection` | Initiates a new SSE state tracker connection |
-| `UpdateSSEConnectionItems(string connectionId, string itemsJson)` | `string` | Updates tracked items for a state tracker |
-| `UpdateSSEConnectionItemsAsync(...)` | `Task<string>` | Async variant |
+| `getEvents(const std::string& topics = "")` | `SSEConnection` | All events, optionally filtered by topic |
+| `initiateStateTracker()` | `SSEConnection` | Initiates a new state tracker SSE connection |
+| `updateSSEConnectionItems(const std::string& connId, const json& items)` | `json` | Updates items tracked by a state tracker |
 
-```csharp
-await using var sse = events.GetEvents("openhab/items/*/statechanged");
-await foreach (var data in sse.ReadAllAsync())
-    Console.WriteLine(data);
+```cpp
+auto sse = events.getEvents("openhab/items/*/statechanged");
+sse.forEach([](const std::string& data) -> bool {
+    std::cout << data << std::endl;
+    return true;
+});
 ```
 
 ---
 
-### ItemEvents
+### `openhab::ItemEvents`
 
-Provides SSE streams for item-related events. All methods return `SSEConnection`. The optional `itemName` parameter defaults to `"*"` (all items).
+Provides SSE streams for item-related events. All methods return `SSEConnection`. The optional `name` parameter defaults to `"*"` (all items).
 
 #### Constructor
 
-```csharp
-var itemEvents = new ItemEvents(client);
+```cpp
+openhab::ItemEvents itemEvents(client);
 ```
 
 #### Methods
@@ -776,639 +858,706 @@ var itemEvents = new ItemEvents(client);
 | Method | Description |
 |---|---|
 | `ItemEvent()` | All item events |
-| `ItemAddedEvent(string itemName = "*")` | Item added events |
-| `ItemRemovedEvent(string itemName = "*")` | Item removed events |
-| `ItemUpdatedEvent(string itemName = "*")` | Item updated events |
-| `ItemCommandEvent(string itemName = "*")` | Item command events |
-| `ItemStateEvent(string itemName = "*")` | Item state events |
-| `ItemStatePredictedEvent(string itemName = "*")` | Item state predicted events |
-| `ItemStateChangedEvent(string itemName = "*")` | Item state changed events |
-| `GroupItemStateChangedEvent(string item, string memberName)` | Group item state changed events for a specific member |
+| `ItemAddedEvent(const std::string& name = "*")` | Item added events |
+| `ItemRemovedEvent(const std::string& name = "*")` | Item removed events |
+| `ItemUpdatedEvent(const std::string& name = "*")` | Item updated events |
+| `ItemCommandEvent(const std::string& name = "*")` | Item command events |
+| `ItemStateEvent(const std::string& name = "*")` | Item state events |
+| `ItemStatePredictedEvent(const std::string& name = "*")` | Item state predicted events |
+| `ItemStateChangedEvent(const std::string& name = "*")` | Item state changed events |
+| `GroupItemStateChangedEvent(const std::string& item, const std::string& member)` | Group item state changed events for a specific member |
 
-```csharp
-// Synchronous
-using var sse = itemEvents.ItemStateChangedEvent("MyLightSwitch");
-foreach (var data in sse.ReadAll())
-    Console.WriteLine(data);
-
-// Asynchronous with cancellation after 30s
-using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-await using var sse = itemEvents.ItemStateChangedEvent("MyLightSwitch");
-await foreach (var data in sse.ReadAllAsync(cts.Token))
-    Console.WriteLine(data);
+```cpp
+auto sse = itemEvents.ItemStateChangedEvent("MyLightSwitch");
+sse.forEach([](const std::string& data) -> bool {
+    auto event = nlohmann::json::parse(data);
+    std::cout << event["type"].get<std::string>() << std::endl;
+    return true;
+});
 ```
 
 ---
 
-### ThingEvents
+### `openhab::ThingEvents`
 
 Provides SSE streams for thing-related events. All methods return `SSEConnection`. The optional `uid` parameter defaults to `"*"`.
 
 #### Constructor
 
-```csharp
-var thingEvents = new ThingEvents(client);
+```cpp
+openhab::ThingEvents thingEvents(client);
 ```
 
 #### Methods
 
 | Method | Description |
 |---|---|
-| `ThingAddedEvent(string uid = "*")` | Thing added events |
-| `ThingRemovedEvent(string uid = "*")` | Thing removed events |
-| `ThingUpdatedEvent(string uid = "*")` | Thing updated events |
-| `ThingStatusInfoEvent(string uid = "*")` | Thing status info events |
-| `ThingStatusInfoChangedEvent(string uid = "*")` | Thing status info changed events |
+| `ThingAddedEvent(const std::string& uid = "*")` | Thing added events |
+| `ThingRemovedEvent(const std::string& uid = "*")` | Thing removed events |
+| `ThingUpdatedEvent(const std::string& uid = "*")` | Thing updated events |
+| `ThingStatusInfoEvent(const std::string& uid = "*")` | Thing status info events |
+| `ThingStatusInfoChangedEvent(const std::string& uid = "*")` | Thing status info changed events |
 
 ---
 
-### InboxEvents
+### `openhab::InboxEvents`
 
 Provides SSE streams for inbox (discovery) events. All methods return `SSEConnection`. The optional `uid` parameter defaults to `"*"`.
 
 #### Constructor
 
-```csharp
-var inboxEvents = new InboxEvents(client);
+```cpp
+openhab::InboxEvents inboxEvents(client);
 ```
 
 #### Methods
 
 | Method | Description |
 |---|---|
-| `InboxAddedEvent(string uid = "*")` | Inbox added events |
-| `InboxRemovedEvent(string uid = "*")` | Inbox removed events |
-| `InboxUpdatedEvent(string uid = "*")` | Inbox updated events |
+| `InboxAddedEvent(const std::string& uid = "*")` | Inbox added events |
+| `InboxRemovedEvent(const std::string& uid = "*")` | Inbox removed events |
+| `InboxUpdatedEvent(const std::string& uid = "*")` | Inbox updated events |
 
 ---
 
-### LinkEvents
+### `openhab::LinkEvents`
 
 Provides SSE streams for item-channel link events. Both methods return `SSEConnection`.
 
 #### Constructor
 
-```csharp
-var linkEvents = new LinkEvents(client);
+```cpp
+openhab::LinkEvents linkEvents(client);
 ```
 
 #### Methods
 
 | Method | Description |
 |---|---|
-| `ItemChannelLinkAddedEvent(string item = "*", string ch = "*")` | Link added events |
-| `ItemChannelLinkRemovedEvent(string item = "*", string ch = "*")` | Link removed events |
+| `ItemChannelLinkAddedEvent(const std::string& item = "*", const std::string& ch = "*")` | Link added events |
+| `ItemChannelLinkRemovedEvent(const std::string& item = "*", const std::string& ch = "*")` | Link removed events |
 
 ---
 
-### ChannelEvents
+### `openhab::ChannelEvents`
 
 Provides SSE streams for channel events. Both methods return `SSEConnection`.
 
 #### Constructor
 
-```csharp
-var channelEvents = new ChannelEvents(client);
+```cpp
+openhab::ChannelEvents channelEvents(client);
 ```
 
 #### Methods
 
 | Method | Description |
 |---|---|
-| `ChannelDescriptionChangedEvent(string uid = "*")` | Channel description changed events |
-| `ChannelTriggeredEvent(string uid = "*")` | Channel triggered events |
+| `ChannelDescriptionChangedEvent(const std::string& uid = "*")` | Channel description changed events |
+| `ChannelTriggeredEvent(const std::string& uid = "*")` | Channel triggered events |
 
 ---
 
-### Iconsets
-
-Provides methods to retrieve available iconsets.
+### `openhab::Iconsets`
 
 #### Constructor
 
-```csharp
-var iconsets = new Iconsets(client);
+```cpp
+openhab::Iconsets iconsets(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetIconsets(string? language = null)` | `GetIconsetsAsync` | Gets all available iconsets |
+| Method | Description |
+|---|---|
+| `getIconsets(const std::string& lang = "")` | Gets all available iconsets |
 
 ---
 
-### Inbox
+### `openhab::Inbox`
 
 Provides methods to manage the openHAB inbox (discovery results).
 
 #### Constructor
 
-```csharp
-var inbox = new Inbox(client);
+```cpp
+openhab::Inbox inbox(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetDiscoveredThings(bool includeIgnored = true)` | `GetDiscoveredThingsAsync` | Gets all discovered things |
-| `RemoveDiscoveryResult(string uid)` | `RemoveDiscoveryResultAsync` | Removes a discovery result |
-| `ApproveDiscoveryResult(string uid, string label, string? newId = null, string? language = null)` | `ApproveDiscoveryResultAsync` | Approves a discovery result and creates the thing |
-| `IgnoreDiscoveryResult(string uid)` | `IgnoreDiscoveryResultAsync` | Marks a discovery result as ignored |
-| `UnignoreDiscoveryResult(string uid)` | `UnignoreDiscoveryResultAsync` | Removes the ignore flag |
+| Method | Description |
+|---|---|
+| `getDiscoveredThings(bool includeIgnored = true)` | Gets all discovered things |
+| `removeDiscoveryResult(const std::string& uid)` | Removes a discovery result |
+| `approveDiscoveryResult(const std::string& uid, const std::string& label, const std::string& newId = "", const std::string& lang = "")` | Approves a discovery result and creates the thing |
+| `ignoreDiscoveryResult(const std::string& uid)` | Marks a discovery result as ignored |
+| `unignoreDiscoveryResult(const std::string& uid)` | Removes the ignore flag |
 
 ---
 
-### Items
+### `openhab::Items`
 
 Provides methods to manage openHAB items.
 
 #### Constructor
 
-```csharp
-var items = new Items(client);
+```cpp
+openhab::Items items(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetItems(string? type = null, string? tags = null, string metadata = ".*", bool recursive = false, string? fields = null, bool staticDataOnly = false, string? language = null)` | `GetItemsAsync` | Gets all items with optional filters |
-| `AddOrUpdateItems(string itemsJson)` | `AddOrUpdateItemsAsync` | Adds or updates a list of items |
-| `GetItem(string itemName, string metadata = ".*", bool recursive = true, string? language = null)` | `GetItemAsync` | Gets a single item |
-| `AddOrUpdateItem(string itemName, string itemDataJson, string? language = null)` | `AddOrUpdateItemAsync` | Adds or updates a single item |
-| `SendCommand(string itemName, string command)` | `SendCommandAsync` | Sends a command to an item |
-| `PostUpdate(string itemName, string state)` | `PostUpdateAsync` | Updates the state of an item (alias for `UpdateItemState`) |
-| `DeleteItem(string itemName)` | `DeleteItemAsync` | Removes an item from the registry |
-| `AddGroupMember(string itemName, string memberItemName)` | `AddGroupMemberAsync` | Adds a member to a group item |
-| `RemoveGroupMember(string itemName, string memberItemName)` | `RemoveGroupMemberAsync` | Removes a member from a group item |
-| `AddMetadata(string itemName, string ns, string metadataJson)` | `AddMetadataAsync` | Adds metadata to an item |
-| `RemoveMetadata(string itemName, string ns)` | `RemoveMetadataAsync` | Removes metadata from an item |
-| `GetMetadataNamespaces(string itemName, string? language = null)` | `GetMetadataNamespacesAsync` | Gets all metadata namespaces of an item |
-| `GetSemanticItem(string itemName, string semanticClass, string? language = null)` | `GetSemanticItemAsync` | Gets the item defining the requested semantics |
-| `GetItemState(string itemName)` | `GetItemStateAsync` | Gets the current state of an item |
-| `UpdateItemState(string itemName, string state, string? language = null)` | `UpdateItemStateAsync` | Updates the state of an item |
-| `AddTag(string itemName, string tag)` | `AddTagAsync` | Adds a tag to an item |
-| `RemoveTag(string itemName, string tag)` | `RemoveTagAsync` | Removes a tag from an item |
-| `PurgeOrphanedMetadata()` | `PurgeOrphanedMetadataAsync` | Removes unused/orphaned metadata from all items |
+##### `getItems(const std::string& type = "", const std::string& tags = "", const std::string& metadata = ".*", bool recursive = false, const std::string& fields = "", bool staticOnly = false, const std::string& language = "")`
 
-```csharp
-// Send a command
-items.SendCommand("MyLightSwitch", "ON");
+Gets all available items with optional filters.
 
-// Get state
-string state = items.GetItemState("MyLightSwitch");
-Console.WriteLine(state); // "ON"
+**Parameters:**
+- `type` — Item type filter (e.g. `"Switch"`, `"Number"`).
+- `tags` — Tag filter.
+- `metadata` — Metadata selector (default `".*"`).
+- `recursive` — Fetch group members recursively.
+- `fields` — Comma-separated list of fields to return.
+- `staticOnly` — Return only cached data.
+- `language` — Language for the response.
 
-// Get filtered items
-string switches = await items.GetItemsAsync(type: "Switch", recursive: true);
+**Returns:** `json`
+
+##### `addOrUpdateItems(const json& items)`
+
+Adds or updates a list of items.
+
+**Returns:** `json`
+
+##### `getItem(const std::string& name, const std::string& metadata = ".*", bool recursive = true, const std::string& lang = "")`
+
+Gets a single item.
+
+**Returns:** `json`
+
+##### `addOrUpdateItem(const std::string& name, const json& data, const std::string& lang = "")`
+
+Adds or updates a single item.
+
+**Returns:** `json`
+
+##### `sendCommand(const std::string& name, const std::string& command)`
+
+Sends a command to an item.
+
+**Returns:** `json`
+
+```cpp
+items.sendCommand("MyLightSwitch", "ON");
 ```
+
+##### `postUpdate(const std::string& name, const std::string& state)`
+
+Updates the state of an item (alias for `updateItemState`).
+
+**Returns:** `json`
+
+##### `deleteItem(const std::string& name)`
+
+Removes an item from the registry.
+
+**Returns:** `json`
+
+##### `addGroupMember(const std::string& name, const std::string& member)`
+
+Adds a member to a group item.
+
+**Returns:** `json`
+
+##### `removeGroupMember(const std::string& name, const std::string& member)`
+
+Removes a member from a group item.
+
+**Returns:** `json`
+
+##### `addMetadata(const std::string& name, const std::string& ns, const json& metadata)`
+
+Adds metadata to an item.
+
+**Returns:** `json`
+
+##### `removeMetadata(const std::string& name, const std::string& ns)`
+
+Removes metadata from an item.
+
+**Returns:** `json`
+
+##### `getMetadataNamespaces(const std::string& name, const std::string& lang = "")`
+
+Gets all metadata namespaces of an item.
+
+**Returns:** `json`
+
+##### `getSemanticItem(const std::string& name, const std::string& semClass, const std::string& lang = "")`
+
+Gets the item that defines the requested semantics.
+
+**Returns:** `json`
+
+##### `getItemState(const std::string& name)`
+
+Gets the current state of an item.
+
+**Returns:** `json` — the state as a plain text string wrapped in JSON.
+
+```cpp
+json state = items.getItemState("MyLightSwitch");
+std::cout << state.get<std::string>() << std::endl;
+```
+
+##### `updateItemState(const std::string& name, const std::string& state, const std::string& lang = "")`
+
+Updates the state of an item.
+
+**Returns:** `json`
+
+##### `addTag(const std::string& name, const std::string& tag)`
+
+Adds a tag to an item.
+
+**Returns:** `json`
+
+##### `removeTag(const std::string& name, const std::string& tag)`
+
+Removes a tag from an item.
+
+**Returns:** `json`
+
+##### `purgeOrphanedMetadata()`
+
+Removes unused/orphaned metadata from all items.
+
+**Returns:** `json`
 
 ---
 
-### Links
+### `openhab::Links`
 
 Provides methods to manage item-channel links.
 
 #### Constructor
 
-```csharp
-var links = new Links(client);
+```cpp
+openhab::Links links(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetLinks(string? channelUID = null, string? itemName = null)` | `GetLinksAsync` | Gets all links, optionally filtered |
-| `GetLink(string item, string ch)` | `GetLinkAsync` | Gets a specific link |
-| `LinkItemToChannel(string item, string ch, string configJson)` | `LinkItemToChannelAsync` | Links an item to a channel |
-| `UnlinkItemFromChannel(string item, string ch)` | `UnlinkItemFromChannelAsync` | Unlinks an item from a channel |
-| `DeleteAllLinks(string obj)` | `DeleteAllLinksAsync` | Deletes all links for an item or thing |
-| `GetOrphanLinks()` | `GetOrphanLinksAsync` | Gets all orphan links |
-| `PurgeUnusedLinks()` | `PurgeUnusedLinksAsync` | Removes all unused/orphaned links |
+| Method | Description |
+|---|---|
+| `getLinks(const std::string& channelUID = "", const std::string& item = "")` | Gets all links, optionally filtered |
+| `getLink(const std::string& item, const std::string& channelUID)` | Gets a specific link |
+| `linkItemToChannel(const std::string& item, const std::string& channelUID, const json& config)` | Links an item to a channel |
+| `unlinkItemFromChannel(const std::string& item, const std::string& channelUID)` | Unlinks an item from a channel |
+| `deleteAllLinks(const std::string& object)` | Deletes all links for an item or thing |
+| `getOrphanLinks()` | Gets all orphan links |
+| `purgeUnusedLinks()` | Removes all unused/orphaned links |
 
 ---
 
-### Logging
+### `openhab::Logging`
 
 Provides methods to manage openHAB loggers.
 
 #### Constructor
 
-```csharp
-var logging = new Logging(client);
+```cpp
+openhab::Logging logging(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetLoggers()` | `GetLoggersAsync` | Gets all loggers and their levels |
-| `GetLogger(string name)` | `GetLoggerAsync` | Gets a specific logger |
-| `ModifyOrAddLogger(string name, string level)` | `ModifyOrAddLoggerAsync` | Modifies or adds a logger |
-| `RemoveLogger(string name)` | `RemoveLoggerAsync` | Removes a logger |
-
-```csharp
-logging.ModifyOrAddLogger("org.openhab.core", "DEBUG");
-```
+| Method | Description |
+|---|---|
+| `getLoggers()` | Gets all loggers and their levels |
+| `getLogger(const std::string& name)` | Gets a specific logger |
+| `modifyOrAddLogger(const std::string& name, const std::string& level)` | Modifies or adds a logger (`"DEBUG"`, `"INFO"`, `"WARN"`, `"ERROR"`) |
+| `removeLogger(const std::string& name)` | Removes a logger |
 
 ---
 
-### ModuleTypes
+### `openhab::ModuleTypes`
 
 Provides methods to retrieve rule module types.
 
 #### Constructor
 
-```csharp
-var moduleTypes = new ModuleTypes(client);
+```cpp
+openhab::ModuleTypes moduleTypes(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetModuleTypes(string? tags = null, string? typeFilter = null, string? language = null)` | `GetModuleTypesAsync` | Gets all module types |
-| `GetModuleType(string uid, string? language = null)` | `GetModuleTypeAsync` | Gets a specific module type |
+| Method | Description |
+|---|---|
+| `getModuleTypes(const std::string& tags = "", const std::string& typeFilter = "", const std::string& lang = "")` | Gets all module types |
+| `getModuleType(const std::string& uid, const std::string& lang = "")` | Gets a specific module type |
 
 ---
 
-### Persistence
+### `openhab::Persistence`
 
 Provides methods to interact with openHAB persistence services.
 
 #### Constructor
 
-```csharp
-var persistence = new Persistence(client);
+```cpp
+openhab::Persistence persistence(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetServices(string? language = null)` | `GetServicesAsync` | Gets all persistence services |
-| `GetServiceConfiguration(string id)` | `GetServiceConfigurationAsync` | Gets a service configuration |
-| `SetServiceConfiguration(string id, string json)` | `SetServiceConfigurationAsync` | Sets a service configuration |
-| `DeleteServiceConfiguration(string id)` | `DeleteServiceConfigurationAsync` | Deletes a service configuration |
-| `GetItemsFromService(string? serviceID = null)` | `GetItemsFromServiceAsync` | Gets all items available via a service |
-| `GetItemPersistenceData(string item, string serviceID, string? startTime = null, string? endTime = null, int page = 1, int pageLength = 50, bool boundary = false, bool itemState = false)` | `GetItemPersistenceDataAsync` | Gets item persistence data |
-| `StoreItemData(string item, string time, string state, string? serviceID = null)` | `StoreItemDataAsync` | Stores a data point |
-| `DeleteItemData(string item, string start, string end, string serviceID)` | `DeleteItemDataAsync` | Deletes item data within a time range |
+| Method | Description |
+|---|---|
+| `getServices(const std::string& lang = "")` | Gets all persistence services |
+| `getServiceConfiguration(const std::string& serviceId)` | Gets a service configuration |
+| `setServiceConfiguration(const std::string& serviceId, const json& config)` | Sets a service configuration |
+| `deleteServiceConfiguration(const std::string& serviceId)` | Deletes a service configuration |
+| `getItemsFromService(const std::string& serviceId = "")` | Gets items available via a service |
+| `getItemPersistenceData(const std::string& item, const std::string& serviceId, const std::string& startTime = "", const std::string& endTime = "", int page = 1, int pageLength = 50, bool boundary = false, bool itemState = false)` | Gets item persistence data |
+| `storeItemData(const std::string& item, const std::string& time, const std::string& state, const std::string& serviceId = "")` | Stores a data point |
+| `deleteItemData(const std::string& item, const std::string& start, const std::string& end, const std::string& serviceId)` | Deletes item data within a time range |
 
-```csharp
-var data = await persistence.GetItemPersistenceDataAsync(
-    "MyTemperatureSensor",
-    "rrd4j",
-    startTime: "2024-01-01T00:00:00.000+0000",
-    endTime:   "2024-01-02T00:00:00.000+0000",
-    pageLength: 100
-);
+```cpp
+json data = persistence.getItemPersistenceData(
+    "MyTemperatureSensor", "rrd4j",
+    "2024-01-01T00:00:00.000+0000",
+    "2024-01-02T00:00:00.000+0000",
+    1, 100);
 ```
 
 ---
 
-### ProfileTypes
-
-Provides methods to retrieve profile types.
+### `openhab::ProfileTypes`
 
 #### Constructor
 
-```csharp
-var profileTypes = new ProfileTypes(client);
+```cpp
+openhab::ProfileTypes profileTypes(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetProfileTypes(string? channelTypeUID = null, string? itemType = null, string? language = null)` | `GetProfileTypesAsync` | Gets all available profile types |
+| Method | Description |
+|---|---|
+| `getProfileTypes(const std::string& channelTypeUID = "", const std::string& itemType = "", const std::string& lang = "")` | Gets all available profile types |
 
 ---
 
-### Rules
+### `openhab::Rules`
 
 Provides methods to manage openHAB rules.
 
 #### Constructor
 
-```csharp
-var rules = new Rules(client);
+```cpp
+openhab::Rules rules(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetRules(string? prefix = null, string? tags = null, bool summary = false, bool staticDataOnly = false)` | `GetRulesAsync` | Gets all rules |
-| `CreateRule(string json)` | `CreateRuleAsync` | Creates a new rule |
-| `GetRule(string uid)` | `GetRuleAsync` | Gets a specific rule |
-| `UpdateRule(string uid, string json)` | `UpdateRuleAsync` | Updates an existing rule |
-| `DeleteRule(string uid)` | `DeleteRuleAsync` | Deletes a rule |
-| `GetModule(string uid, string cat, string mid)` | `GetModuleAsync` | Gets a specific module of a rule |
-| `GetModuleConfig(string uid, string cat, string mid)` | `GetModuleConfigAsync` | Gets the configuration of a module |
-| `GetModuleConfigParam(string uid, string cat, string mid, string param)` | `GetModuleConfigParamAsync` | Gets a module configuration parameter |
-| `SetModuleConfigParam(string uid, string cat, string mid, string param, string val)` | `SetModuleConfigParamAsync` | Sets a module configuration parameter |
-| `GetActions(string uid)` | `GetActionsAsync` | Gets all action modules of a rule |
-| `GetConditions(string uid)` | `GetConditionsAsync` | Gets all condition modules of a rule |
-| `GetTriggers(string uid)` | `GetTriggersAsync` | Gets all trigger modules of a rule |
-| `GetConfiguration(string uid)` | `GetConfigurationAsync` | Gets the configuration of a rule |
-| `UpdateConfiguration(string uid, string json)` | `UpdateConfigurationAsync` | Updates the rule configuration |
-| `SetRuleState(string uid, bool enable)` | `SetRuleStateAsync` | Enables or disables a rule |
-| `Enable(string uid)` | `EnableAsync` | Enables a rule |
-| `Disable(string uid)` | `DisableAsync` | Disables a rule |
-| `RunNow(string uid, string? contextJson = null)` | `RunNowAsync` | Executes a rule immediately |
-| `SimulateSchedule(string from, string until)` | `SimulateScheduleAsync` | Simulates the rule schedule |
+| Method | Description |
+|---|---|
+| `getRules(const std::string& prefix = "", const std::string& tags = "", bool summary = false, bool staticOnly = false)` | Gets all rules |
+| `createRule(const json& data)` | Creates a new rule |
+| `getRule(const std::string& uid)` | Gets a specific rule |
+| `updateRule(const std::string& uid, const json& data)` | Updates an existing rule |
+| `deleteRule(const std::string& uid)` | Deletes a rule |
+| `getModule(const std::string& uid, const std::string& cat, const std::string& mid)` | Gets a specific module |
+| `getModuleConfig(const std::string& uid, const std::string& cat, const std::string& mid)` | Gets the module configuration |
+| `getModuleConfigParam(const std::string& uid, const std::string& cat, const std::string& mid, const std::string& param)` | Gets a module config parameter |
+| `setModuleConfigParam(const std::string& uid, const std::string& cat, const std::string& mid, const std::string& param, const std::string& value)` | Sets a module config parameter |
+| `getActions(const std::string& uid)` | Gets all action modules |
+| `getConditions(const std::string& uid)` | Gets all condition modules |
+| `getTriggers(const std::string& uid)` | Gets all trigger modules |
+| `getConfiguration(const std::string& uid)` | Gets the rule configuration |
+| `updateConfiguration(const std::string& uid, const json& config)` | Updates the rule configuration |
+| `setRuleState(const std::string& uid, bool enable)` | Enables or disables a rule |
+| `enable(const std::string& uid)` | Enables a rule |
+| `disable(const std::string& uid)` | Disables a rule |
+| `runNow(const std::string& uid, const json& context = nullptr)` | Executes a rule immediately |
+| `simulateSchedule(const std::string& from, const std::string& until)` | Simulates the rule schedule |
 
-```csharp
-rules.Enable("my-rule-uid");
-await rules.RunNowAsync("my-rule-uid");
+```cpp
+rules.enable("my-rule-uid");
+rules.runNow("my-rule-uid");
 ```
 
 ---
 
-### Services
+### `openhab::Services`
 
 Provides methods to manage openHAB configurable services.
 
 #### Constructor
 
-```csharp
-var services = new Services(client);
+```cpp
+openhab::Services services(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetServices(string? language = null)` | `GetServicesAsync` | Gets all configurable services |
-| `GetService(string id, string? language = null)` | `GetServiceAsync` | Gets a specific service |
-| `GetServiceConfig(string id)` | `GetServiceConfigAsync` | Gets the service configuration |
-| `UpdateServiceConfig(string id, string json, string? language = null)` | `UpdateServiceConfigAsync` | Updates the service configuration |
-| `DeleteServiceConfig(string id)` | `DeleteServiceConfigAsync` | Deletes the service configuration |
-| `GetServiceContexts(string id, string? language = null)` | `GetServiceContextsAsync` | Gets all contexts of a multi-context service |
+| Method | Description |
+|---|---|
+| `getServices(const std::string& lang = "")` | Gets all configurable services |
+| `getService(const std::string& id, const std::string& lang = "")` | Gets a specific service |
+| `getServiceConfig(const std::string& id)` | Gets the service configuration |
+| `updateServiceConfig(const std::string& id, const json& config, const std::string& lang = "")` | Updates the service configuration |
+| `deleteServiceConfig(const std::string& id)` | Deletes the service configuration |
+| `getServiceContexts(const std::string& id, const std::string& lang = "")` | Gets all contexts of a multi-context service |
 
 ---
 
-### Sitemaps
+### `openhab::Sitemaps`
 
 Provides methods to interact with openHAB sitemaps.
 
 #### Constructor
 
-```csharp
-var sitemaps = new Sitemaps(client);
+```cpp
+openhab::Sitemaps sitemaps(client);
 ```
 
 #### Methods
 
-| Method | Async / Returns | Description |
+| Method | Returns | Description |
 |---|---|---|
-| `GetSitemaps()` | `GetSitemapsAsync` | Gets all available sitemaps |
-| `GetSitemap(string name, string? type = null, string? cb = null, bool hidden = false, string? language = null)` | `GetSitemapAsync` | Gets a specific sitemap |
-| `GetSitemapPage(string name, string page, string? subId = null, bool hidden = false, string? language = null)` | `GetSitemapPageAsync` | Gets a sitemap page |
-| `GetSitemapEvents(string subId, string? name = null, string? pageId = null)` | `SSEConnection` | Gets sitemap events as SSE stream |
-| `GetFullSitemapEvents(string subId, string? name = null)` | `SSEConnection` | Gets full sitemap events as SSE stream |
-| `SubscribeToSitemapEvents()` | `SubscribeToSitemapEventsAsync` | Creates a sitemap event subscription |
+| `getSitemaps()` | `json` | Gets all available sitemaps |
+| `getSitemap(const std::string& name, const std::string& type = "", bool includeHidden = false, const std::string& lang = "")` | `json` | Gets a specific sitemap |
+| `getSitemapPage(const std::string& name, const std::string& pageId, const std::string& subId = "", bool includeHidden = false, const std::string& lang = "")` | `json` | Gets a sitemap page |
+| `getSitemapEvents(const std::string& subId, const std::string& sitemapName = "", const std::string& pageId = "")` | `SSEConnection` | Gets sitemap events as SSE stream |
+| `subscribeToSitemapEvents()` | `json` | Creates a sitemap event subscription |
 
 ---
 
-### Systeminfo
-
-Provides methods to retrieve openHAB system information.
+### `openhab::Systeminfo`
 
 #### Constructor
 
-```csharp
-var systeminfo = new Systeminfo(client);
+```cpp
+openhab::Systeminfo systeminfo(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetSystemInfo()` | `GetSystemInfoAsync` | Gets general system information |
-| `GetUoMInfo()` | `GetUoMInfoAsync` | Gets units of measurement information |
+| Method | Description |
+|---|---|
+| `getSystemInfo()` | Gets general system information |
+| `getUoMInfo()` | Gets units of measurement information |
 
 ---
 
-### Tags
+### `openhab::Tags`
 
 Provides methods to manage openHAB semantic tags.
 
 #### Constructor
 
-```csharp
-var tags = new Tags(client);
+```cpp
+openhab::Tags tags(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetTags(string? language = null)` | `GetTagsAsync` | Gets all semantic tags |
-| `CreateTag(string json, string? language = null)` | `CreateTagAsync` | Creates a new semantic tag |
-| `GetTag(string id, string? language = null)` | `GetTagAsync` | Gets a specific tag |
-| `UpdateTag(string id, string json, string? language = null)` | `UpdateTagAsync` | Updates a semantic tag |
-| `DeleteTag(string id, string? language = null)` | `DeleteTagAsync` | Deletes a semantic tag |
+| Method | Description |
+|---|---|
+| `getTags(const std::string& lang = "")` | Gets all semantic tags |
+| `createTag(const json& data, const std::string& lang = "")` | Creates a new tag |
+| `getTag(const std::string& id, const std::string& lang = "")` | Gets a specific tag |
+| `updateTag(const std::string& id, const json& data, const std::string& lang = "")` | Updates a tag |
+| `deleteTag(const std::string& id, const std::string& lang = "")` | Deletes a tag |
 
 ---
 
-### Templates
-
-Provides methods to retrieve rule templates.
+### `openhab::Templates`
 
 #### Constructor
 
-```csharp
-var templates = new Templates(client);
+```cpp
+openhab::Templates templates(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetTemplates(string? language = null)` | `GetTemplatesAsync` | Gets all available rule templates |
-| `GetTemplate(string uid, string? language = null)` | `GetTemplateAsync` | Gets a specific rule template |
+| Method | Description |
+|---|---|
+| `getTemplates(const std::string& lang = "")` | Gets all available rule templates |
+| `getTemplate(const std::string& uid, const std::string& lang = "")` | Gets a specific rule template |
 
 ---
 
-### ThingTypes
-
-Provides methods to retrieve thing types.
+### `openhab::ThingTypes`
 
 #### Constructor
 
-```csharp
-var thingTypes = new ThingTypes(client);
+```cpp
+openhab::ThingTypes thingTypes(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetThingTypes(string? bindingID = null, string? language = null)` | `GetThingTypesAsync` | Gets all available thing types |
-| `GetThingType(string uid, string? language = null)` | `GetThingTypeAsync` | Gets a specific thing type |
+| Method | Description |
+|---|---|
+| `getThingTypes(const std::string& bindingId = "", const std::string& lang = "")` | Gets all available thing types |
+| `getThingType(const std::string& uid, const std::string& lang = "")` | Gets a specific thing type |
 
 ---
 
-### Things
+### `openhab::Things`
 
 Provides methods to manage openHAB things.
 
 #### Constructor
 
-```csharp
-var things = new Things(client);
+```cpp
+openhab::Things things(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetThings(bool summary = false, bool staticDataOnly = false, string? language = null)` | `GetThingsAsync` | Gets all things |
-| `CreateThing(string json, string? language = null)` | `CreateThingAsync` | Creates a new thing |
-| `GetThing(string uid, string? language = null)` | `GetThingAsync` | Gets a specific thing |
-| `UpdateThing(string uid, string json, string? language = null)` | `UpdateThingAsync` | Updates a thing |
-| `DeleteThing(string uid, bool force = false, string? language = null)` | `DeleteThingAsync` | Deletes a thing |
-| `UpdateThingConfiguration(string uid, string json, string? language = null)` | `UpdateThingConfigurationAsync` | Updates the thing configuration |
-| `GetThingConfigStatus(string uid, string? language = null)` | `GetThingConfigStatusAsync` | Gets the configuration status |
-| `SetThingStatus(string uid, bool enabled, string? language = null)` | `SetThingStatusAsync` | Enables or disables a thing |
-| `EnableThing(string uid)` | `EnableThingAsync` | Enables a thing |
-| `DisableThing(string uid)` | `DisableThingAsync` | Disables a thing |
-| `UpdateThingFirmware(string uid, string version, string? language = null)` | `UpdateThingFirmwareAsync` | Updates the thing firmware |
-| `GetThingFirmwareStatus(string uid, string? language = null)` | `GetThingFirmwareStatusAsync` | Gets the firmware status |
-| `GetThingFirmwares(string uid, string? language = null)` | `GetThingFirmwaresAsync` | Gets available firmware versions |
-| `GetThingStatus(string uid, string? language = null)` | `GetThingStatusAsync` | Gets the thing status |
-
-```csharp
-things.EnableThing("zwave:device:controller:node5");
-await things.UpdateThingConfigurationAsync("my:thing:uid", "{\"port\":\"/dev/ttyUSB0\"}");
-```
+| Method | Description |
+|---|---|
+| `getThings(bool summary = false, bool staticOnly = false, const std::string& lang = "")` | Gets all things |
+| `createThing(const json& data, const std::string& lang = "")` | Creates a new thing |
+| `getThing(const std::string& uid, const std::string& lang = "")` | Gets a specific thing |
+| `updateThing(const std::string& uid, const json& data, const std::string& lang = "")` | Updates a thing |
+| `deleteThing(const std::string& uid, bool force = false, const std::string& lang = "")` | Deletes a thing |
+| `updateThingConfiguration(const std::string& uid, const json& config, const std::string& lang = "")` | Updates the thing configuration |
+| `getThingConfigStatus(const std::string& uid, const std::string& lang = "")` | Gets the configuration status |
+| `setThingStatus(const std::string& uid, bool enabled, const std::string& lang = "")` | Enables or disables a thing |
+| `enableThing(const std::string& uid)` | Enables a thing |
+| `disableThing(const std::string& uid)` | Disables a thing |
+| `updateThingFirmware(const std::string& uid, const std::string& version, const std::string& lang = "")` | Updates the firmware |
+| `getThingFirmwareStatus(const std::string& uid, const std::string& lang = "")` | Gets the firmware status |
+| `getThingFirmwares(const std::string& uid, const std::string& lang = "")` | Gets available firmware versions |
+| `getThingStatus(const std::string& uid, const std::string& lang = "")` | Gets the thing status |
 
 ---
 
-### Transformations
-
-Provides methods to manage openHAB transformations.
+### `openhab::Transformations`
 
 #### Constructor
 
-```csharp
-var transformations = new Transformations(client);
+```cpp
+openhab::Transformations transformations(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetTransformations()` | `GetTransformationsAsync` | Gets all transformations |
-| `GetTransformation(string uid)` | `GetTransformationAsync` | Gets a specific transformation |
-| `UpdateTransformation(string uid, string json)` | `UpdateTransformationAsync` | Updates a transformation |
-| `DeleteTransformation(string uid)` | `DeleteTransformationAsync` | Deletes a transformation |
-| `GetTransformationServices()` | `GetTransformationServicesAsync` | Gets all transformation services |
+| Method | Description |
+|---|---|
+| `getTransformations()` | Gets all transformations |
+| `getTransformation(const std::string& uid)` | Gets a specific transformation |
+| `updateTransformation(const std::string& uid, const json& data)` | Updates a transformation |
+| `deleteTransformation(const std::string& uid)` | Deletes a transformation |
+| `getTransformationServices()` | Gets all transformation services |
 
 ---
 
-### UI
+### `openhab::UI`
 
 Provides methods to manage UI components and tiles.
 
 #### Constructor
 
-```csharp
-var ui = new UI(client);
+```cpp
+openhab::UI ui(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetUIComponents(string ns, bool summary = false)` | `GetUIComponentsAsync` | Gets all UI components in a namespace |
-| `AddUIComponent(string ns, string json)` | `AddUIComponentAsync` | Adds a UI component |
-| `GetUIComponent(string ns, string uid)` | `GetUIComponentAsync` | Gets a specific UI component |
-| `UpdateUIComponent(string ns, string uid, string json)` | `UpdateUIComponentAsync` | Updates a UI component |
-| `DeleteUIComponent(string ns, string uid)` | `DeleteUIComponentAsync` | Deletes a UI component |
-| `GetUITiles()` | `GetUITilesAsync` | Gets all registered UI tiles |
+| Method | Description |
+|---|---|
+| `getUIComponents(const std::string& ns, bool summary = false)` | Gets all UI components in a namespace |
+| `addUIComponent(const std::string& ns, const json& data)` | Adds a UI component |
+| `getUIComponent(const std::string& ns, const std::string& uid)` | Gets a specific UI component |
+| `updateUIComponent(const std::string& ns, const std::string& uid, const json& data)` | Updates a UI component |
+| `deleteUIComponent(const std::string& ns, const std::string& uid)` | Deletes a UI component |
+| `getUITiles()` | Gets all registered UI tiles |
 
 ---
 
-### UUID
-
-Provides a method to retrieve the openHAB instance UUID.
+### `openhab::UUID`
 
 #### Constructor
 
-```csharp
-var uuid = new UUID(client);
+```cpp
+openhab::UUID uuid(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetUUID()` | `GetUUIDAsync` | Gets the UUID of the openHAB instance |
+| Method | Description |
+|---|---|
+| `getUUID()` | Gets the UUID of the openHAB instance |
 
-```csharp
-string id = uuid.GetUUID();
-Console.WriteLine(id);
+```cpp
+json id = uuid.getUUID();
+std::cout << id.get<std::string>() << std::endl;
 ```
 
 ---
 
-### Voice
+### `openhab::Voice`
 
 Provides methods to interact with the openHAB voice system.
 
 #### Constructor
 
-```csharp
-var voice = new Voice(client);
+```cpp
+openhab::Voice voice(client);
 ```
 
 #### Methods
 
-| Method | Async | Description |
-|---|---|---|
-| `GetDefaultVoice()` | `GetDefaultVoiceAsync` | Gets the default voice |
-| `GetVoices()` | `GetVoicesAsync` | Gets all available voices |
-| `GetInterpreters(string? language = null)` | `GetInterpretersAsync` | Gets all human language interpreters |
-| `GetInterpreter(string id, string? language = null)` | `GetInterpreterAsync` | Gets a specific interpreter |
-| `InterpretText(string text, string? language = null)` | `InterpretTextAsync` | Sends text to the default interpreter |
-| `InterpretTextBatch(string text, string ids, string? language = null)` | `InterpretTextBatchAsync` | Sends text to multiple interpreters |
-| `StartDialog(string sourceID, string? ksID = null, string? sttID = null, string? ttsID = null, string? voiceID = null, string? hliIDs = null, string? sinkID = null, string? keyword = null, string? listeningItem = null)` | `StartDialogAsync` | Starts dialog processing |
-| `StopDialog(string sourceID)` | `StopDialogAsync` | Stops dialog processing |
-| `ListenAndAnswer(string sid, string stt, string tts, string v, string? hli = null, string? sink = null, string? li = null)` | `ListenAndAnswerAsync` | Single listen-and-answer dialog |
-| `SayText(string text, string voiceID, string sinkID, string volume = "100")` | `SayTextAsync` | Speaks text aloud |
+| Method | Description |
+|---|---|
+| `getDefaultVoice()` | Gets the default voice |
+| `getVoices()` | Gets all available voices |
+| `getInterpreters(const std::string& lang = "")` | Gets all human language interpreters |
+| `getInterpreter(const std::string& id, const std::string& lang = "")` | Gets a specific interpreter |
+| `interpretText(const std::string& text, const std::string& lang = "")` | Sends text to the default interpreter |
+| `interpretTextBatch(const std::string& text, const std::string& ids, const std::string& lang = "")` | Sends text to multiple interpreters (comma-separated IDs) |
+| `startDialog(const std::string& sourceId, const std::string& ksId = "", const std::string& sttId = "", const std::string& ttsId = "", const std::string& voiceId = "", const std::string& hliIds = "", const std::string& sinkId = "", const std::string& keyword = "", const std::string& listeningItem = "")` | Starts dialog processing |
+| `stopDialog(const std::string& sourceId)` | Stops dialog processing |
+| `listenAndAnswer(const std::string& sourceId, const std::string& sttId, const std::string& ttsId, const std::string& voiceId, const std::string& hliIds = "", const std::string& sinkId = "", const std::string& listeningItem = "")` | Single listen-and-answer dialog |
+| `sayText(const std::string& text, const std::string& voiceId, const std::string& sinkId, const std::string& volume = "100")` | Speaks text aloud |
 
-```csharp
-voice.SayText("Hello from openHAB!", "voicerss:en-us", "javasound:sink:default");
-await voice.StartDialogAsync("javasound:source:microphone", sttID: "googlestt", ttsID: "googletts");
+```cpp
+voice.sayText("Hello from openHAB!", "voicerss:en-us", "javasound:sink:default");
+
+voice.startDialog("javasound:source:microphone",
+    "", "googlestt", "googletts", "google:en-US:en-US-Wavenet-A");
 ```
 
 ---
 
-## C# vs. Python — Key Differences
+## C++ vs. Python — Key Differences
 
-| Topic | C# | Python |
+| Topic | C++ | Python |
 |---|---|---|
-| Package manager | NuGet (`CSharpOpenHABRestClient`) | PyPI (`pip install python-openhab-rest-client`) |
-| Namespace | `using OpenHABRestClient;` | `from openhab import Items` |
-| Sync methods | Every method has a sync variant | `requests`-based, always sync |
-| Async methods | Every method has an `Async` variant returning `Task<string>` | `AsyncOpenHABClient` + `aiohttp` |
-| SSE | `SSEConnection` with `ReadAll()` / `ReadAllAsync()` + `await foreach` | `response.iter_lines()` |
-| Error handling | `OpenHABException` with `StatusCode` property | `requests.exceptions.*` |
-| Return type | `string` (raw JSON or plain text) | `dict`, `list`, or `str` |
-| JSON parsing | `System.Text.Json` or Newtonsoft.Json | Built-in `json.loads()` |
-| Naming convention | PascalCase (`GetItems`, `SendCommand`) | camelCase (`getItems`, `sendCommand`) |
-| Config data | JSON `string` (e.g. `"{\"state\":\"ON\"}"`) | Python `dict` |
-| Client lifetime | `IDisposable` — use `using` | GC-managed session |
-| SSL | Self-signed certs accepted by default | Requires `verify=False` |
-| `GetToken` | All parameters positional with defaults | Named/keyword arguments |
-| `InterpretTextBatch` | `ids` as comma-separated `string` | `IDs` as `List[str]` |
-| Target framework | `netstandard2.1` + `net8.0` | Python 3.x |
+| Distribution | Source + CMake build | PyPI (`pip install`) |
+| Dependency management | CMake / vcpkg / apt / brew | pip |
+| Include | `#include <openhab/openhab.h>` | `from openhab import Items` |
+| Namespace | `openhab::` or `using namespace openhab;` | module-level import |
+| Return type | `nlohmann::json` (structured data) | `dict`, `list`, or `str` |
+| JSON access | `item["state"].get<std::string>()` | `item["state"]` |
+| Error handling | `openhab::OpenHABException` (inherits `std::runtime_error`) | `requests.exceptions.*` |
+| Async | Not built-in — use `std::thread` for SSE | `AsyncOpenHABClient` + `aiohttp` |
+| SSE | `SSEConnection::forEach(callback)` + `cancel()` | `response.iter_lines()` |
+| Memory | Stack-allocated or RAII — no GC | GC-managed |
+| Optional params | Empty string `""` = not sent | `None` / default value |
+| HTTP DELETE | `del(...)` (avoids C++ keyword conflict) | `delete(...)` |
+| JSON body | `json` object passed directly | Python `dict` |
+| Static library | `libopenhab_rest_client.a` | n/a |
+| Shared library | `libopenhab_rest_client.so` / `.dll` | n/a |
+| Platforms | Linux, macOS, Windows, ARM/Raspberry Pi | Cross-platform |
+| Minimum standard | C++17 | Python 3.x |
 
 ---
 
@@ -1432,7 +1581,7 @@ Contributions are welcome! Please create an issue or pull request to suggest cha
    ```
 5. Open a pull request.
 
-Please ensure your code compiles without warnings, has zero external dependencies, and follows the existing style (PascalCase, XML doc comments, sync + async for every method).
+Please ensure your code compiles with C++17, builds cleanly with CMake, and follows the existing style (snake_case method names, `const std::string&` for string parameters, `""` for optional params).
 
 ## License
 
