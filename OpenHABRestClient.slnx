@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/OpenHABRestClient/OpenHABRestClient.csproj" />
+  <Project Path="tests/OpenHABRestClient.Tests/OpenHABRestClient.Tests.csproj" />
+</Solution>

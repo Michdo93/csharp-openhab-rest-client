@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['*']
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Build (netstandard2.1, net8.0, net10.0)
+        run: dotnet build src/OpenHABRestClient -c Release
+      - name: Unit tests
+        run: dotnet test --project tests/OpenHABRestClient.Tests -c Release
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: openHAB with the exercise configuration
+        run: bash .github/openhab/start.sh
+        env:
+          EXERCISE_CONF: ${{ github.workspace }}/tests/openhab-conf
+      - name: Integration tests (with a quiet stream for 6 minutes)
+        run: dotnet test --project tests/OpenHABRestClient.Tests -c Release
+        env:
+          OPENHAB_LONG: '1'
+      - name: openHAB log
+        if: failure()
+        run: tail -n 100 ~/openhab/openhab.out ~/openhab/userdata/logs/openhab.log || true
+      - name: Package
+        run: dotnet pack src/OpenHABRestClient -c Release -o dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nuget
+          path: dist/*
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet test --project tests/OpenHABRestClient.Tests -c Release
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet test --project tests/OpenHABRestClient.Tests -c Release
