@@ -24,6 +24,19 @@ public class UnitTests
         Assert.StartsWith("csharp-openhab-rest-client/2.0.0", h.Requests[0].Headers["User-Agent"]);
     }
 
+    sealed class AsyncOnly : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage r, CancellationToken ct) =>
+            Task.FromResult(FakeHandler.Reply(200, "ON", "text/plain"));
+    }
+
+    [Fact]
+    public void HandlerWithoutSynchronousSend()
+    {
+        var c = new OpenHABClient("http://oh.test", token: "t", handler: new AsyncOnly());
+        Assert.Equal("ON", new Items(c).GetItemState("Licht").Str());
+    }
+
     [Fact]
     public void BasicAuthWithoutToken()
     {
@@ -282,5 +295,7 @@ public class UnitTests
         Assert.False(r.IsError());
         Assert.Equal("", r.ErrorMessage());
         Assert.True(double.IsNaN(r.Num("gibtsnicht")));
+        Assert.Equal("""{"name":"A","state":"21.5 °C"}""", r.At("members.0").Json());
+        Assert.Equal("null", ((JsonNode?)null).Json());
     }
 }

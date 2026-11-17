@@ -181,7 +181,11 @@ namespace OpenHABRestClient.Internal
                 else
                 {
 #if NET5_0_OR_GREATER
-                    resp = c.HttpClient.Send(req, HttpCompletionOption.ResponseContentRead, ct);
+                    // an own HttpMessageHandler (tests, proxies) may lack a synchronous Send
+                    resp = c.OwnHandler
+                        ? c.HttpClient.Send(req, HttpCompletionOption.ResponseContentRead, ct)
+                        : c.HttpClient.SendAsync(req, HttpCompletionOption.ResponseContentRead, ct)
+                                      .ConfigureAwait(false).GetAwaiter().GetResult();
                     using var s = resp.Content.ReadAsStream(ct);
                     using var ms = new System.IO.MemoryStream();
                     s.CopyTo(ms);

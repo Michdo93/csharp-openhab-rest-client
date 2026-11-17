@@ -34,6 +34,7 @@ namespace OpenHABRestClient
 
         internal HttpClient HttpClient { get; }
         internal HttpClient StreamClient { get; }
+        internal bool OwnHandler => _ownsHandler;
 
         /// <summary>Base URL without trailing slash.</summary>
         public string Url { get; }

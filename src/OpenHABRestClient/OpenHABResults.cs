@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -95,6 +96,18 @@ namespace OpenHABRestClient
             }
             return fallback;
         }
+
+        static readonly JsonSerializerOptions Compact = new JsonSerializerOptions
+        {
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        };
+
+        /// <summary>
+        /// The result as compact JSON text with readable umlauts and units
+        /// (<c>{"message":"OK"}</c>, <c>"21.5 °C"</c>); <c>null</c> for null.
+        /// </summary>
+        public static string Json(this JsonNode? value) =>
+            value == null ? "null" : value.ToJsonString(Compact);
 
         /// <summary>The elements of an array result (empty for errors and other values).</summary>
         public static JsonArray List(this JsonNode? value, string path = "") =>

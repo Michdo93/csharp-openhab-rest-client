@@ -117,6 +117,7 @@ r.IsError();  r.ErrorMessage();
 e.Str("payload.value");            // "" if missing
 r.Num("state");                    // 21.5 from "21.5 °C", NaN if missing
 r.Bool("editable");  r.List("members");  r.At("members.0.name");
+r.Json();                          // compact JSON text: {"message":"OK"}
 ```
 
 ### Event streams (Server-Sent Events)
