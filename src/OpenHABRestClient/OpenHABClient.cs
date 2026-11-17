@@ -27,7 +27,7 @@ namespace OpenHABRestClient
         /// <summary>Time limit for opening an event stream in seconds (Python: SSE_CONNECT_TIMEOUT).</summary>
         public const double SSE_CONNECT_TIMEOUT = 10;
         /// <summary>Version of the library.</summary>
-        public const string VERSION = "2.0.0";
+        public const string VERSION = "2.0.1";
 
         readonly HttpMessageHandler _handler;
         readonly bool _ownsHandler;

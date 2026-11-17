@@ -21,7 +21,7 @@ public class UnitTests
         Assert.Equal("http://oh.test:8080", c.Url);
         new Items(c).GetItems();
         Assert.Equal("Bearer t0k", h.Requests[0].Headers["Authorization"]);
-        Assert.StartsWith("csharp-openhab-rest-client/2.0.0", h.Requests[0].Headers["User-Agent"]);
+        Assert.StartsWith("csharp-openhab-rest-client/2.0.1", h.Requests[0].Headers["User-Agent"]);
     }
 
     sealed class AsyncOnly : HttpMessageHandler

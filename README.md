@@ -33,6 +33,13 @@ await foreach (var e in stream.EventsAsync())
     Console.WriteLine(e.Str("payload.value"));
 ```
 
+## 2.0.1
+
+- `Json()` for compact, readable output of results (umlauts and `°` not escaped)
+- an own `HttpMessageHandler` (e.g. in tests) works with the synchronous methods, too: they run
+  on the async path instead of throwing `NotSupportedException`
+- the package 2.0.0 on nuget.org was built before these two changes; please use 2.0.1
+
 ## What is new in 2.0.0
 
 Version 2.0.0 is a rewrite (details: [BUGS-1.0.0.md](BUGS-1.0.0.md)). The REST classes are
@@ -54,10 +61,10 @@ calls against openHAB 5 gives identical results for Python and C#, synchronous a
 ## Installation
 
 ```bash
-dotnet add package CSharpOpenHABRestClient --version 2.0.0
+dotnet add package CSharpOpenHABRestClient --version 2.0.1
 ```
 
-or in the project file `<PackageReference Include="CSharpOpenHABRestClient" Version="2.0.0" />`.
+or in the project file `<PackageReference Include="CSharpOpenHABRestClient" Version="2.0.1" />`.
 On .NET 8/10 the package has no dependencies; on .NET Standard 2.1 it uses System.Text.Json.
 
 **Unity:** with [NuGetForUnity](https://github.com/GlitchEnzo/NuGetForUnity) install

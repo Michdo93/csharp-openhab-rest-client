@@ -8,7 +8,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <PackageId>CSharpOpenHABRestClient</PackageId>
-    <Version>2.0.0</Version>
+    <Version>2.0.1</Version>
     <Authors>Michael Christian Dörflinger</Authors>
     <Description>C# client for the openHAB REST API and its Server-Sent Events – same classes, methods and results as python-openhab-rest-client. Synchronous and async methods, .NET Standard 2.1 (Unity) and .NET 8/10.</Description>
     <PackageTags>openhab;smarthome;rest;sse;home-automation</PackageTags>
