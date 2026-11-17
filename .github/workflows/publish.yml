@@ -13,10 +13,13 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.x'
+          dotnet-version: '10.x'
+
+      - name: Test
+        run: dotnet test --project tests/OpenHABRestClient.Tests -c Release
 
       - name: Build & Pack
-        run: dotnet pack OpenHABRestClient/OpenHABRestClient.csproj --configuration Release --output nupkg
+        run: dotnet pack src/OpenHABRestClient/OpenHABRestClient.csproj --configuration Release --output nupkg
 
       - name: Push to NuGet
-        run: dotnet nuget push nupkg/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        run: dotnet nuget push "nupkg/*.nupkg" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
